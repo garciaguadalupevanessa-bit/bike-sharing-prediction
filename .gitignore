@@ -1,0 +1,49 @@
+# Environment variables and local secrets
+.env
+*.env
+!.env.example
+
+# Python cache and temporary files
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Jupyter temporary files
+*.nbconvert.ipynb
+
+# Logs
+*.log
+
+# Streamlit local secrets
+.streamlit/secrets.toml
+
+# Data files generated locally
+data/raw/**
+data/interim/**
+data/processed/**
+
+# Keep data directory structure
+!data/raw/
+!data/raw/**/
+!data/raw/**/.gitkeep
+!data/interim/
+!data/interim/**/
+!data/interim/**/.gitkeep
+!data/processed/
+!data/processed/**/
+!data/processed/**/.gitkeep
+
+# Model artifacts generated locally
+models/**
+!models/
+!models/.gitkeep
