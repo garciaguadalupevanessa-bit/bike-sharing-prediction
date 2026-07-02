@@ -28,11 +28,12 @@ Thumbs.db
 .streamlit/secrets.toml
 
 # Data files generated locally
-data/raw/**
-data/interim/**
-data/processed/**
+data/raw/**                        
+data/interim/**                    
+data/processed/**                  
 
 # Keep data directory structure
+
 !data/raw/
 !data/raw/**/
 !data/raw/**/.gitkeep
@@ -42,8 +43,11 @@ data/processed/**
 !data/processed/
 !data/processed/**/
 !data/processed/**/.gitkeep
+*.csv
+!data/processed/station_status_history_2022_modeling_base_clean.csv
 
 # Model artifacts generated locally
 models/**
 !models/
 !models/.gitkeep
+!models/*.joblib
