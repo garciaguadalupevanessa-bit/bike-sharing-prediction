@@ -9,6 +9,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import folium
 from streamlit_folium import st_folium
+import calendar
 
 
 
@@ -733,22 +734,28 @@ with tab_usuario:
 # ==========================================
 # PESTAÑA 2: VISTA GESTOR
 # ==========================================
+# ==========================================
+# PESTAÑA 2: VISTA GESTOR
+# ==========================================
 with tab_gestion:
     with st.container(border=True):
         st.markdown("### Panel de Control Logístico")
 
-
         if modelo_rf is None:
             st.warning("⚠️ Modelo no cargado.")
 
-
         with st.form("form_gestion"):
             col_est, col_espacio = st.columns([1, 2])
-            with col_est:
-                estacion_gest = st.selectbox("Selecciona la estación:", list(estaciones_data.keys()), key="est_gest")
 
+            with col_est:
+                estacion_gest = st.selectbox(
+                    "Selecciona la estación:",
+                    list(estaciones_data.keys()),
+                    key="est_gest"
+                )
 
             col_g1, col_g2 = st.columns(2)
+
             with col_g1:
                 hora_gest_str = st.selectbox(
                     "Hora",
@@ -757,28 +764,45 @@ with tab_gestion:
                     key="h_g"
                 )
 
+                anio_gest = st.number_input(
+                    "Año",
+                    min_value=2020,
+                    max_value=2035,
+                    value=datetime.now().year,
+                    step=1,
+                    key="anio_g"
+                )
+
                 mes_gest_str = st.selectbox(
                     "Mes",
                     list(MESES_ES.keys()),
-                    index=5,
+                    index=datetime.now().month - 1,
                     key="m_g"
                 )
 
-                dia_mes_gest = st.number_input(
+                mes_gest = MESES_ES[mes_gest_str]
+
+                dias_del_mes = calendar.monthrange(
+                    int(anio_gest),
+                    mes_gest
+                )[1]
+
+                dia_mes_gest = st.selectbox(
                     "Día",
-                    min_value=1,
-                    max_value=31,
-                    value=datetime.now().day,
-                    step=1,
+                    list(range(1, dias_del_mes + 1)),
+                    index=min(datetime.now().day, dias_del_mes) - 1,
                     key="dia_mes_g"
                 )
 
-                dia_gest_str = st.selectbox(
-                    "Día de la semana",
-                    DIAS_SEMANA,
-                    index=0,
-                    key="d_g"
+                fecha_gest = datetime(
+                    int(anio_gest),
+                    mes_gest,
+                    int(dia_mes_gest)
                 )
+
+                dia_gest_str = DIAS_SEMANA[fecha_gest.weekday()]
+
+                st.info(f"📅 Ese día cae en: **{dia_gest_str}**")
 
                 es_festivo = st.checkbox(
                     "¿Es festivo?",
@@ -786,23 +810,29 @@ with tab_gestion:
                     key="festivo_g"
                 )
 
-            submit_gest = st.form_submit_button("Ejecutar Simulación")
-
+                submit_gest = st.form_submit_button("Ejecutar Simulación")
 
             with col_g2:
-                t_gest = st.number_input("Temp media", value=clima_actual['temp_mean'])
-                p_gest = st.number_input("Precipitación", value=0.0)
-                h_gest = st.number_input("Humedad", value=50.0)
+                t_gest = st.number_input(
+                    "Temp media",
+                    value=clima_actual["temp_mean"]
+                )
 
+                p_gest = st.number_input(
+                    "Precipitación",
+                    value=0.0
+                )
+
+                h_gest = st.number_input(
+                    "Humedad",
+                    value=50.0
+                )
 
     if submit_gest and modelo_rf is not None:
         hora_gest = int(hora_gest_str.split(":")[0])
-        mes_gest = MESES_ES[mes_gest_str]
-
 
         t_max_sim = t_gest + 5.0
         t_min_sim = t_gest - 5.0
-
 
         if es_festivo:
             tipo_gest_calculado = "Festivo"
@@ -811,37 +841,62 @@ with tab_gestion:
         else:
             tipo_gest_calculado = "Laborable"
 
-
         bicis_pred = predecir_bicis(
-            estacion_nombre=estacion_gest, hora=hora_gest, mes=mes_gest,
-            dia_semana_str=dia_gest_str, tipo_dia_str=tipo_gest_calculado,
-            temp_mean=t_gest, precip=p_gest, hum=h_gest,
-            temp_max=t_max_sim, temp_min=t_min_sim
+            estacion_nombre=estacion_gest,
+            hora=hora_gest,
+            mes=mes_gest,
+            dia_semana_str=dia_gest_str,
+            tipo_dia_str=tipo_gest_calculado,
+            temp_mean=t_gest,
+            precip=p_gest,
+            hum=h_gest,
+            temp_max=t_max_sim,
+            temp_min=t_min_sim
         )
-
 
         if bicis_pred != -1:
             with st.container(border=True):
                 st.success("✅ Simulación completada.")
 
-
                 col_res1, col_res2 = st.columns(2)
+
                 capacidad_total = estaciones_data[estacion_gest]["capacity"]
                 huecos_libres = max(0, capacidad_total - bicis_pred)
 
-
                 with col_res1:
-                    st.metric("Bicicletas Disponibles", f"{bicis_pred} uds.")
-                with col_res2:
-                    st.metric("Anclajes Libres", f"{huecos_libres} uds.")
+                    st.metric(
+                        "Bicicletas Disponibles",
+                        f"{bicis_pred} uds."
+                    )
 
+                with col_res2:
+                    st.metric(
+                        "Anclajes Libres",
+                        f"{huecos_libres} uds."
+                    )
 
                 st.markdown("---")
+
                 if bicis_pred <= 3:
-                    st.error("🚨 **ESTADO CRÍTICO:** Disponibilidad mínima. Se requiere furgoneta de reposición inmediata.")
+                    st.error(
+                        "🚨 **ESTADO CRÍTICO:** Disponibilidad mínima. "
+                        "Se requiere furgoneta de reposición inmediata."
+                    )
+
                 elif 4 <= bicis_pred <= 7:
-                    st.warning("⚠️ **ESTADO MODERADO:** Disponibilidad baja. Programar reposición en la próxima ruta.")
+                    st.warning(
+                        "⚠️ **ESTADO MODERADO:** Disponibilidad baja. "
+                        "Programar reposición en la próxima ruta."
+                    )
+
                 elif bicis_pred >= (capacidad_total - 3):
-                    st.warning("⚠️ **ESTADO DE SATURACIÓN:** Estación casi llena. Plantear retirada de unidades.")
+                    st.warning(
+                        "⚠️ **ESTADO DE SATURACIÓN:** Estación casi llena. "
+                        "Plantear retirada de unidades."
+                    )
+
                 else:
-                    st.info("🟢 **ESTADO ÓPTIMO:** Inventario equilibrado. No requiere acción logística.")
+                    st.info(
+                        "🟢 **ESTADO ÓPTIMO:** Inventario equilibrado. "
+                        "No requiere acción logística."
+                    )
