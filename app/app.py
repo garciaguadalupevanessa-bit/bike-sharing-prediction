@@ -615,30 +615,18 @@ with tab_usuario:
         st.markdown("### ¿Habrá bicis cuando llegue?")
         st.info(f"📡 **El tiempo ahora en Madrid:** {clima_actual['temp_mean']}ºC - {clima_actual['estado']}")
 
-    # Lista de estaciones
-    lista_estaciones = list(estaciones_data.keys())
-
-    # Inicializamos la estación seleccionada
-    if "estacion_usuario_actual" not in st.session_state:
-        st.session_state.estacion_usuario_actual = lista_estaciones[0]
-
     col_izq, col_der = st.columns([1, 1.5])
 
     with col_izq:
         with st.container(border=True):
-
-            # OJO: fuera del form para que el mapa reaccione al cambiar el selectbox
-            estacion_usu = st.selectbox(
-                "¿A qué estación vas?",
-                lista_estaciones,
-                index=lista_estaciones.index(st.session_state.estacion_usuario_actual),
-                key="est_usu"
-            )
-
-            # Guardamos la estación elegida en session_state
-            st.session_state.estacion_usuario_actual = estacion_usu
-
             with st.form("form_usuario"):
+
+                estacion_usu = st.selectbox(
+                    "¿A qué estación vas?",
+                    list(estaciones_data.keys()),
+                    key="est_usu"
+                )
+
                 hora_usu_str = st.selectbox(
                     "¿A qué hora vas a ir?",
                     HORAS_DISPONIBLES,
@@ -646,14 +634,22 @@ with tab_usuario:
                     key="hora_usu"
                 )
 
-              
-
                 submit_usu = st.form_submit_button("Consultar Disponibilidad")
 
             if submit_usu:
                 hora_usu = int(hora_usu_str.split(":")[0])
                 ahora = datetime.now()
-                mapa_dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+
+                mapa_dias = [
+                    "Lunes",
+                    "Martes",
+                    "Miércoles",
+                    "Jueves",
+                    "Viernes",
+                    "Sábado",
+                    "Domingo"
+                ]
+
                 dia_real = mapa_dias[ahora.weekday()]
                 tipo_real = "Fin de semana" if ahora.weekday() >= 5 else "Laborable"
 
@@ -663,11 +659,11 @@ with tab_usuario:
                     mes=ahora.month,
                     dia_semana_str=dia_real,
                     tipo_dia_str=tipo_real,
-                    temp_mean=clima_actual['temp_mean'],
-                    precip=clima_actual['precip'],
-                    hum=clima_actual['hum'],
-                    temp_max=clima_actual['temp_max'],
-                    temp_min=clima_actual['temp_min']
+                    temp_mean=clima_actual["temp_mean"],
+                    precip=clima_actual["precip"],
+                    hum=clima_actual["hum"],
+                    temp_max=clima_actual["temp_max"],
+                    temp_min=clima_actual["temp_min"]
                 )
 
                 if bicis_pred != -1:
@@ -675,33 +671,42 @@ with tab_usuario:
                     huecos = capacidad_est - bicis_pred
 
                     st.success("Previsión lista. ¡Buen viaje!")
+
                     col1, col2 = st.columns(2)
 
                     with col1:
-                        st.metric(label="Bicis libres estimadas", value=str(bicis_pred))
+                        st.metric(
+                            label="Bicis libres estimadas",
+                            value=str(bicis_pred)
+                        )
 
                     with col2:
-                        st.metric(label="Huecos para aparcar", value=str(max(0, huecos)))
+                        st.metric(
+                            label="Huecos para aparcar",
+                            value=str(max(0, huecos))
+                        )
 
     with col_der:
         with st.container(border=True):
-            st.markdown('<div class="titulo-mapa">Mapa de Estaciones</div>', unsafe_allow_html=True)
-
-            # Coordenadas de la estación seleccionada
-            estacion_actual = st.session_state.estacion_usuario_actual
-            coord_actual = estaciones_data[estacion_actual]
-
-            # El mapa se centra en la estación elegida
-            m = folium.Map(
-                location=[coord_actual["lat"], coord_actual["lon"]],
-                zoom_start=16
+            st.markdown(
+                '<div class="titulo-mapa">Mapa de Estaciones</div>',
+                unsafe_allow_html=True
             )
 
-            # Pintamos todos los marcadores
+            # Coordenadas de la estación seleccionada en el desplegable
+            coord_estacion = estaciones_data[estacion_usu]
+
+            # Mapa centrado en la estación elegida
+            m = folium.Map(
+                location=[coord_estacion["lat"], coord_estacion["lon"]],
+                zoom_start=17
+            )
+
+            # Pintamos todas las estaciones
             for nombre, coord in estaciones_data.items():
 
-                # La estación seleccionada sale en rojo
-                color_marcador = "red" if nombre == estacion_actual else "blue"
+                # La estación seleccionada aparece en rojo
+                color_marcador = "red" if nombre == estacion_usu else "blue"
 
                 folium.Marker(
                     location=[coord["lat"], coord["lon"]],
@@ -713,8 +718,7 @@ with tab_usuario:
                     )
                 ).add_to(m)
 
-            # Mostramos el mapa y recogemos la interacción
-            map_data = st_folium(
+            st_folium(
                 m,
                 width=None,
                 use_container_width=True,
@@ -722,18 +726,7 @@ with tab_usuario:
                 key="mapa_usuario"
             )
 
-            # Si el usuario hace clic en un marcador, actualizamos el selectbox
-            if map_data and map_data.get("last_object_clicked_tooltip"):
-                estacion_clickada = map_data["last_object_clicked_tooltip"]
 
-                if estacion_clickada in lista_estaciones:
-                    if estacion_clickada != st.session_state.estacion_usuario_actual:
-                        st.session_state.estacion_usuario_actual = estacion_clickada
-                        st.rerun()
-
-# ==========================================
-# PESTAÑA 2: VISTA GESTOR
-# ==========================================
 # ==========================================
 # PESTAÑA 2: VISTA GESTOR
 # ==========================================
