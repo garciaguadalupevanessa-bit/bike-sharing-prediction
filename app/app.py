@@ -11,6 +11,10 @@ import folium
 from streamlit_folium import st_folium
 
 
+
+#para ejecutar el script: streamlit run app/app.py
+
+
 load_dotenv()
 API_KEY = os.getenv("AEMET_API_KEY")
 
@@ -600,6 +604,8 @@ def predecir_bicis(estacion_nombre, hora, mes, dia_semana_str, tipo_dia_str,
 tab_usuario, tab_gestion = st.tabs(["📱 Vista Usuario (Ciclista)", "⚙️ Vista Gestión (BiciMAD)"])
 
 
+
+
 # ==========================================
 # PESTAÑA 1: VISTA USUARIO
 # ==========================================
@@ -608,17 +614,40 @@ with tab_usuario:
         st.markdown("### ¿Habrá bicis cuando llegue?")
         st.info(f"📡 **El tiempo ahora en Madrid:** {clima_actual['temp_mean']}ºC - {clima_actual['estado']}")
 
+    # Lista de estaciones
+    lista_estaciones = list(estaciones_data.keys())
+
+    # Inicializamos la estación seleccionada
+    if "estacion_usuario_actual" not in st.session_state:
+        st.session_state.estacion_usuario_actual = lista_estaciones[0]
 
     col_izq, col_der = st.columns([1, 1.5])
 
-
     with col_izq:
         with st.container(border=True):
-            with st.form("form_usuario"):
-                estacion_usu = st.selectbox("¿A qué estación vas?", list(estaciones_data.keys()), key="est_usu")
-                hora_usu_str = st.selectbox("¿A qué hora vas a ir?", HORAS_DISPONIBLES, index=8, key="hora_usu")
-                submit_usu = st.form_submit_button("Consultar Disponibilidad")
 
+            # OJO: fuera del form para que el mapa reaccione al cambiar el selectbox
+            estacion_usu = st.selectbox(
+                "¿A qué estación vas?",
+                lista_estaciones,
+                index=lista_estaciones.index(st.session_state.estacion_usuario_actual),
+                key="est_usu"
+            )
+
+            # Guardamos la estación elegida en session_state
+            st.session_state.estacion_usuario_actual = estacion_usu
+
+            with st.form("form_usuario"):
+                hora_usu_str = st.selectbox(
+                    "¿A qué hora vas a ir?",
+                    HORAS_DISPONIBLES,
+                    index=8,
+                    key="hora_usu"
+                )
+
+              
+
+                submit_usu = st.form_submit_button("Consultar Disponibilidad")
 
             if submit_usu:
                 hora_usu = int(hora_usu_str.split(":")[0])
@@ -627,39 +656,79 @@ with tab_usuario:
                 dia_real = mapa_dias[ahora.weekday()]
                 tipo_real = "Fin de semana" if ahora.weekday() >= 5 else "Laborable"
 
-
                 bicis_pred = predecir_bicis(
-                    estacion_nombre=estacion_usu, hora=hora_usu, mes=ahora.month,
-                    dia_semana_str=dia_real, tipo_dia_str=tipo_real,
-                    temp_mean=clima_actual['temp_mean'], precip=clima_actual['precip'],
-                    hum=clima_actual['hum'], temp_max=clima_actual['temp_max'], temp_min=clima_actual['temp_min']
+                    estacion_nombre=estacion_usu,
+                    hora=hora_usu,
+                    mes=ahora.month,
+                    dia_semana_str=dia_real,
+                    tipo_dia_str=tipo_real,
+                    temp_mean=clima_actual['temp_mean'],
+                    precip=clima_actual['precip'],
+                    hum=clima_actual['hum'],
+                    temp_max=clima_actual['temp_max'],
+                    temp_min=clima_actual['temp_min']
                 )
-
 
                 if bicis_pred != -1:
                     capacidad_est = estaciones_data[estacion_usu]["capacity"]
                     huecos = capacidad_est - bicis_pred
 
-
                     st.success("Previsión lista. ¡Buen viaje!")
                     col1, col2 = st.columns(2)
+
                     with col1:
                         st.metric(label="Bicis libres estimadas", value=str(bicis_pred))
+
                     with col2:
                         st.metric(label="Huecos para aparcar", value=str(max(0, huecos)))
-
 
     with col_der:
         with st.container(border=True):
             st.markdown('<div class="titulo-mapa">Mapa de Estaciones</div>', unsafe_allow_html=True)
-            m = folium.Map(location=[40.4150, -3.6980], zoom_start=14)
-            for nombre, coord in estaciones_data.items():
-                folium.Marker(
-                    [coord["lat"], coord["lon"]], tooltip=nombre,
-                    icon=folium.Icon(color="blue", icon="info-sign")
-                ).add_to(m)
-            st_folium(m, width=None, use_container_width=True, height=350, key="mapa_usuario")
 
+            # Coordenadas de la estación seleccionada
+            estacion_actual = st.session_state.estacion_usuario_actual
+            coord_actual = estaciones_data[estacion_actual]
+
+            # El mapa se centra en la estación elegida
+            m = folium.Map(
+                location=[coord_actual["lat"], coord_actual["lon"]],
+                zoom_start=16
+            )
+
+            # Pintamos todos los marcadores
+            for nombre, coord in estaciones_data.items():
+
+                # La estación seleccionada sale en rojo
+                color_marcador = "red" if nombre == estacion_actual else "blue"
+
+                folium.Marker(
+                    location=[coord["lat"], coord["lon"]],
+                    tooltip=nombre,
+                    popup=nombre,
+                    icon=folium.Icon(
+                        color=color_marcador,
+                        icon="info-sign"
+                    )
+                ).add_to(m)
+
+            # Mostramos el mapa y recogemos la interacción
+            map_data = st_folium(
+                m,
+                width=None,
+                use_container_width=True,
+                height=350,
+                key="mapa_usuario"
+            )
+
+            # Si el usuario hace clic en un marcador, actualizamos el selectbox
+            if map_data and map_data.get("last_object_clicked_tooltip"):
+                estacion_clickada = map_data["last_object_clicked_tooltip"]
+
+                if estacion_clickada in lista_estaciones:
+                    if estacion_clickada != st.session_state.estacion_usuario_actual:
+                        st.session_state.estacion_usuario_actual = estacion_clickada
+                        st.rerun()
 
 # ==========================================
 # PESTAÑA 2: VISTA GESTOR
@@ -681,11 +750,43 @@ with tab_gestion:
 
             col_g1, col_g2 = st.columns(2)
             with col_g1:
-                hora_gest_str = st.selectbox("Hora", HORAS_DISPONIBLES, index=8, key="h_g")
-                mes_gest_str = st.selectbox("Mes", list(MESES_ES.keys()), index=5, key="m_g")
-                dia_gest_str = st.selectbox("Día de la semana", DIAS_SEMANA, index=0, key="d_g")
-                es_festivo = st.checkbox("¿Es festivo?", value=False, key="festivo_g")
-                submit_gest = st.form_submit_button("Ejecutar Simulación")
+                hora_gest_str = st.selectbox(
+                    "Hora",
+                    HORAS_DISPONIBLES,
+                    index=8,
+                    key="h_g"
+                )
+
+                mes_gest_str = st.selectbox(
+                    "Mes",
+                    list(MESES_ES.keys()),
+                    index=5,
+                    key="m_g"
+                )
+
+                dia_mes_gest = st.number_input(
+                    "Día",
+                    min_value=1,
+                    max_value=31,
+                    value=datetime.now().day,
+                    step=1,
+                    key="dia_mes_g"
+                )
+
+                dia_gest_str = st.selectbox(
+                    "Día de la semana",
+                    DIAS_SEMANA,
+                    index=0,
+                    key="d_g"
+                )
+
+                es_festivo = st.checkbox(
+                    "¿Es festivo?",
+                    value=False,
+                    key="festivo_g"
+                )
+
+            submit_gest = st.form_submit_button("Ejecutar Simulación")
 
 
             with col_g2:
