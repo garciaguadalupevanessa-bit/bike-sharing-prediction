@@ -7,13 +7,10 @@ import base64
 import joblib
 from datetime import datetime
 from dotenv import load_dotenv
-import folium
-from streamlit_folium import st_folium
 import calendar
-
-
-
-#para ejecutar el script: streamlit run app/app.py
+import folium
+from branca.element import Element
+from streamlit_folium import st_folium
 
 
 load_dotenv()
@@ -470,71 +467,141 @@ HORAS_DISPONIBLES = [f"{h:02d}:00" for h in range(24)]
 DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=1800)
 def obtener_clima_madrid():
-    default = {"temp_mean": 20.0, "temp_max": 25.0, "temp_min": 15.0,
-                "precip": 0.0, "hum": 50.0, "estado": "Despejado 🌤️"}
+    """Obtiene la prediccion horaria de AEMET para Madrid de forma robusta.
 
+    Evita valores raros usando siempre la hora disponible mas cercana y
+    comprobando rangos razonables antes de enviar los datos al modelo.
+    """
+
+    default = {
+        "temp_mean": 20.0,
+        "temp_max": 25.0,
+        "temp_min": 15.0,
+        "precip": 0.0,
+        "hum": 50.0,
+        "estado": "Sin AEMET: valores por defecto 🌤️"
+    }
 
     if not API_KEY:
         return default
 
+    def es_numero_valido(valor):
+        try:
+            return valor is not None and str(valor).strip() not in ["", "Ip"]
+        except Exception:
+            return False
+
+    def extraer_valor(item, campo="value"):
+        valor = item.get(campo)
+        if not es_numero_valido(valor):
+            return None
+        return float(str(valor).replace(",", "."))
+
+    def seleccionar_por_hora(lista, hora_objetivo):
+        """Devuelve el item de AEMET mas cercano a la hora actual.
+
+        Si hay horas futuras disponibles, prioriza la primera hora futura.
+        Si no, usa la hora pasada mas cercana.
+        """
+        candidatos = []
+
+        for item in lista or []:
+            periodo = str(item.get("periodo", "")).zfill(2)
+            if not periodo.isdigit():
+                continue
+
+            hora_item = int(periodo)
+            if 0 <= hora_item <= 23:
+                candidatos.append((hora_item, item))
+
+        if not candidatos:
+            return None
+
+        candidatos.sort(key=lambda x: x[0])
+
+        for hora_item, item in candidatos:
+            if hora_item >= hora_objetivo:
+                return item
+
+        return candidatos[-1][1]
 
     try:
         url_metadata = (
             "https://opendata.aemet.es/opendata/api/prediccion/especifica/"
             f"municipio/horaria/28079/?api_key={API_KEY}"
         )
-        res_meta = requests.get(url_metadata, timeout=8)
+
+        res_meta = requests.get(url_metadata, timeout=10)
         if res_meta.status_code != 200:
             return default
-
 
         url_datos = res_meta.json().get("datos")
         if not url_datos:
             return default
 
-
-        res_datos = requests.get(url_datos, timeout=8)
+        res_datos = requests.get(url_datos, timeout=10)
         if res_datos.status_code != 200:
             return default
 
+        respuesta = res_datos.json()
+        if not respuesta:
+            return default
 
-        datos = res_datos.json()[0]
-        dia = datos["prediccion"]["dia"][0]
-        hora_actual = str(datetime.now().hour)
+        datos = respuesta[0]
+        dias = datos.get("prediccion", {}).get("dia", [])
+        if not dias:
+            return default
 
+        ahora = datetime.now()
+        fecha_hoy = ahora.strftime("%Y-%m-%d")
 
-        def valor_por_hora(lista, campo="value"):
-            for item in lista:
-                if item.get("periodo") == hora_actual or item.get("periodo") == hora_actual.zfill(2):
-                    return float(item[campo])
-            return float(lista[0][campo]) if lista else None
+        # Elegimos el bloque del dia actual si existe. Si no, usamos el primero disponible.
+        dia = next((d for d in dias if str(d.get("fecha", "")).startswith(fecha_hoy)), dias[0])
 
+        item_temp = seleccionar_por_hora(dia.get("temperatura", []), ahora.hour)
+        item_hum = seleccionar_por_hora(dia.get("humedadRelativa", []), ahora.hour)
+        item_precip = seleccionar_por_hora(dia.get("precipitacion", []), ahora.hour)
 
-        temp_actual = valor_por_hora(dia.get("temperatura", []))
-        hum_actual = valor_por_hora(dia.get("humedadRelativa", []))
-        precip_prob = valor_por_hora(dia.get("precipitacion", []))
+        temp_actual = extraer_valor(item_temp) if item_temp else None
+        hum_actual = extraer_valor(item_hum) if item_hum else None
+        precip_actual = extraer_valor(item_precip) if item_precip else 0.0
 
+        # Rango de seguridad para no mostrar ni usar valores absurdos.
+        if temp_actual is None or not (-20 <= temp_actual <= 50):
+            temp_actual = default["temp_mean"]
 
-        temp_actual = temp_actual if temp_actual is not None else 20.0
-        hum_actual = hum_actual if hum_actual is not None else 50.0
-        precip_prob = precip_prob if precip_prob is not None else 0.0
+        if hum_actual is None or not (0 <= hum_actual <= 100):
+            hum_actual = default["hum"]
 
+        if precip_actual is None or precip_actual < 0 or precip_actual > 200:
+            precip_actual = default["precip"]
+
+        temperaturas_dia = []
+        for item in dia.get("temperatura", []):
+            valor = extraer_valor(item)
+            if valor is not None and -20 <= valor <= 50:
+                temperaturas_dia.append(valor)
+
+        if temperaturas_dia:
+            temp_max = max(temperaturas_dia)
+            temp_min = min(temperaturas_dia)
+        else:
+            temp_max = temp_actual + 5.0
+            temp_min = temp_actual - 5.0
 
         return {
             "temp_mean": round(temp_actual, 1),
-            "temp_max": round(temp_actual + 5.0, 1),
-            "temp_min": round(temp_actual - 5.0, 1),
-            "precip": round(precip_prob, 1),
+            "temp_max": round(temp_max, 1),
+            "temp_min": round(temp_min, 1),
+            "precip": round(precip_actual, 1),
             "hum": round(hum_actual, 1),
-            "estado": "Conectado a AEMET 🌤️"
+            "estado": f"Conectado a AEMET 🌤️ Hora {ahora.hour:02d}:00"
         }
 
-
-    except (requests.RequestException, KeyError, IndexError, ValueError):
+    except (requests.RequestException, KeyError, IndexError, ValueError, TypeError):
         return default
-
 
 clima_actual = obtener_clima_madrid()
 
@@ -605,8 +672,6 @@ def predecir_bicis(estacion_nombre, hora, mes, dia_semana_str, tipo_dia_str,
 tab_usuario, tab_gestion = st.tabs(["📱 Vista Usuario (Ciclista)", "⚙️ Vista Gestión (BiciMAD)"])
 
 
-
-
 # ==========================================
 # PESTAÑA 1: VISTA USUARIO
 # ==========================================
@@ -620,50 +685,22 @@ with tab_usuario:
     with col_izq:
         with st.container(border=True):
             with st.form("form_usuario"):
-
-                estacion_usu = st.selectbox(
-                    "¿A qué estación vas?",
-                    list(estaciones_data.keys()),
-                    key="est_usu"
-                )
-
-                hora_usu_str = st.selectbox(
-                    "¿A qué hora vas a ir?",
-                    HORAS_DISPONIBLES,
-                    index=8,
-                    key="hora_usu"
-                )
-
+                estacion_usu = st.selectbox("¿A qué estación vas?", list(estaciones_data.keys()), key="est_usu")
+                hora_usu_str = st.selectbox("¿A qué hora vas a ir?", HORAS_DISPONIBLES, index=8, key="hora_usu")
                 submit_usu = st.form_submit_button("Consultar Disponibilidad")
 
             if submit_usu:
                 hora_usu = int(hora_usu_str.split(":")[0])
                 ahora = datetime.now()
-
-                mapa_dias = [
-                    "Lunes",
-                    "Martes",
-                    "Miércoles",
-                    "Jueves",
-                    "Viernes",
-                    "Sábado",
-                    "Domingo"
-                ]
-
+                mapa_dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
                 dia_real = mapa_dias[ahora.weekday()]
                 tipo_real = "Fin de semana" if ahora.weekday() >= 5 else "Laborable"
 
                 bicis_pred = predecir_bicis(
-                    estacion_nombre=estacion_usu,
-                    hora=hora_usu,
-                    mes=ahora.month,
-                    dia_semana_str=dia_real,
-                    tipo_dia_str=tipo_real,
-                    temp_mean=clima_actual["temp_mean"],
-                    precip=clima_actual["precip"],
-                    hum=clima_actual["hum"],
-                    temp_max=clima_actual["temp_max"],
-                    temp_min=clima_actual["temp_min"]
+                    estacion_nombre=estacion_usu, hora=hora_usu, mes=ahora.month,
+                    dia_semana_str=dia_real, tipo_dia_str=tipo_real,
+                    temp_mean=clima_actual['temp_mean'], precip=clima_actual['precip'],
+                    hum=clima_actual['hum'], temp_max=clima_actual['temp_max'], temp_min=clima_actual['temp_min']
                 )
 
                 if bicis_pred != -1:
@@ -671,51 +708,62 @@ with tab_usuario:
                     huecos = capacidad_est - bicis_pred
 
                     st.success("Previsión lista. ¡Buen viaje!")
-
                     col1, col2 = st.columns(2)
-
                     with col1:
-                        st.metric(
-                            label="Bicis libres estimadas",
-                            value=str(bicis_pred)
-                        )
-
+                        st.metric(label="Bicis libres estimadas", value=str(bicis_pred))
                     with col2:
-                        st.metric(
-                            label="Huecos para aparcar",
-                            value=str(max(0, huecos))
-                        )
+                        st.metric(label="Huecos para aparcar", value=str(max(0, huecos)))
 
     with col_der:
         with st.container(border=True):
-            st.markdown(
-                '<div class="titulo-mapa">Mapa de Estaciones</div>',
-                unsafe_allow_html=True
-            )
+            st.markdown('<div class="titulo-mapa">Mapa de Estaciones</div>', unsafe_allow_html=True)
 
-            # Coordenadas de la estación seleccionada en el desplegable
+            # Centro del mapa según la estación elegida en el desplegable
             coord_estacion = estaciones_data[estacion_usu]
+            centro_mapa = [coord_estacion["lat"], coord_estacion["lon"]]
 
-            # Mapa centrado en la estación elegida
             m = folium.Map(
-                location=[coord_estacion["lat"], coord_estacion["lon"]],
-                zoom_start=17
+                location=centro_mapa,
+                zoom_start=17,
+                tiles=None,
+                prefer_canvas=True
             )
 
-            # Pintamos todas las estaciones
-            for nombre, coord in estaciones_data.items():
+            folium.TileLayer(
+                tiles="OpenStreetMap",
+                name="OpenStreetMap",
+                control=False,
+                opacity=1
+            ).add_to(m)
 
-                # La estación seleccionada aparece en rojo
+            # Evita el efecto visual de transparencia/fade mientras cargan las teselas del mapa.
+            m.get_root().header.add_child(Element("""
+                <style>
+                    .leaflet-container {
+                        background: #ffffff !important;
+                    }
+                    .leaflet-tile {
+                        opacity: 1 !important;
+                        transition: none !important;
+                    }
+                    .leaflet-fade-anim .leaflet-tile {
+                        opacity: 1 !important;
+                        transition: none !important;
+                    }
+                    .leaflet-marker-icon, .leaflet-marker-shadow {
+                        opacity: 1 !important;
+                    }
+                </style>
+            """))
+
+            for nombre, coord in estaciones_data.items():
                 color_marcador = "red" if nombre == estacion_usu else "blue"
 
                 folium.Marker(
-                    location=[coord["lat"], coord["lon"]],
+                    [coord["lat"], coord["lon"]],
                     tooltip=nombre,
                     popup=nombre,
-                    icon=folium.Icon(
-                        color=color_marcador,
-                        icon="info-sign"
-                    )
+                    icon=folium.Icon(color=color_marcador, icon="info-sign")
                 ).add_to(m)
 
             st_folium(
@@ -723,7 +771,10 @@ with tab_usuario:
                 width=None,
                 use_container_width=True,
                 height=350,
-                key="mapa_usuario"
+                key="mapa_usuario",
+                center=centro_mapa,
+                zoom=17,
+                returned_objects=[]
             )
 
 
@@ -739,23 +790,14 @@ with tab_gestion:
 
         with st.form("form_gestion"):
             col_est, col_espacio = st.columns([1, 2])
-
             with col_est:
-                estacion_gest = st.selectbox(
-                    "Selecciona la estación:",
-                    list(estaciones_data.keys()),
-                    key="est_gest"
-                )
+                estacion_gest = st.selectbox("Selecciona la estación:", list(estaciones_data.keys()), key="est_gest")
 
-            col_g1, col_g2 = st.columns(2)
+            col_g1, col_g2, col_g3 = st.columns([1, 1, 1])
 
             with col_g1:
-                hora_gest_str = st.selectbox(
-                    "Hora",
-                    HORAS_DISPONIBLES,
-                    index=8,
-                    key="h_g"
-                )
+                st.markdown("**Fecha y hora**")
+                hora_gest_str = st.selectbox("Hora", HORAS_DISPONIBLES, index=8, key="h_g")
 
                 anio_gest = st.number_input(
                     "Año",
@@ -774,11 +816,7 @@ with tab_gestion:
                 )
 
                 mes_gest = MESES_ES[mes_gest_str]
-
-                dias_del_mes = calendar.monthrange(
-                    int(anio_gest),
-                    mes_gest
-                )[1]
+                dias_del_mes = calendar.monthrange(int(anio_gest), mes_gest)[1]
 
                 dia_mes_gest = st.selectbox(
                     "Día",
@@ -787,39 +825,22 @@ with tab_gestion:
                     key="dia_mes_g"
                 )
 
-                fecha_gest = datetime(
-                    int(anio_gest),
-                    mes_gest,
-                    int(dia_mes_gest)
-                )
-
+                fecha_gest = datetime(int(anio_gest), mes_gest, int(dia_mes_gest))
                 dia_gest_str = DIAS_SEMANA[fecha_gest.weekday()]
 
+            with col_g2:
+                st.markdown("**Resultado de fecha**")
                 st.info(f"📅 Ese día cae en: **{dia_gest_str}**")
 
-                es_festivo = st.checkbox(
-                    "¿Es festivo?",
-                    value=False,
-                    key="festivo_g"
-                )
+                es_festivo = st.checkbox("¿Es festivo?", value=False, key="festivo_g")
 
                 submit_gest = st.form_submit_button("Ejecutar Simulación")
 
-            with col_g2:
-                t_gest = st.number_input(
-                    "Temp media",
-                    value=clima_actual["temp_mean"]
-                )
-
-                p_gest = st.number_input(
-                    "Precipitación",
-                    value=0.0
-                )
-
-                h_gest = st.number_input(
-                    "Humedad",
-                    value=50.0
-                )
+            with col_g3:
+                st.markdown("**Condiciones climáticas**")
+                t_gest = st.number_input("Temp media", value=clima_actual['temp_mean'])
+                p_gest = st.number_input("Precipitación", value=0.0)
+                h_gest = st.number_input("Humedad", value=50.0)
 
     if submit_gest and modelo_rf is not None:
         hora_gest = int(hora_gest_str.split(":")[0])
@@ -835,16 +856,10 @@ with tab_gestion:
             tipo_gest_calculado = "Laborable"
 
         bicis_pred = predecir_bicis(
-            estacion_nombre=estacion_gest,
-            hora=hora_gest,
-            mes=mes_gest,
-            dia_semana_str=dia_gest_str,
-            tipo_dia_str=tipo_gest_calculado,
-            temp_mean=t_gest,
-            precip=p_gest,
-            hum=h_gest,
-            temp_max=t_max_sim,
-            temp_min=t_min_sim
+            estacion_nombre=estacion_gest, hora=hora_gest, mes=mes_gest,
+            dia_semana_str=dia_gest_str, tipo_dia_str=tipo_gest_calculado,
+            temp_mean=t_gest, precip=p_gest, hum=h_gest,
+            temp_max=t_max_sim, temp_min=t_min_sim
         )
 
         if bicis_pred != -1:
@@ -852,44 +867,20 @@ with tab_gestion:
                 st.success("✅ Simulación completada.")
 
                 col_res1, col_res2 = st.columns(2)
-
                 capacidad_total = estaciones_data[estacion_gest]["capacity"]
                 huecos_libres = max(0, capacidad_total - bicis_pred)
 
                 with col_res1:
-                    st.metric(
-                        "Bicicletas Disponibles",
-                        f"{bicis_pred} uds."
-                    )
-
+                    st.metric("Bicicletas Disponibles", f"{bicis_pred} uds.")
                 with col_res2:
-                    st.metric(
-                        "Anclajes Libres",
-                        f"{huecos_libres} uds."
-                    )
+                    st.metric("Anclajes Libres", f"{huecos_libres} uds.")
 
                 st.markdown("---")
-
                 if bicis_pred <= 3:
-                    st.error(
-                        "🚨 **ESTADO CRÍTICO:** Disponibilidad mínima. "
-                        "Se requiere furgoneta de reposición inmediata."
-                    )
-
+                    st.error("🚨 **ESTADO CRÍTICO:** Disponibilidad mínima. Se requiere furgoneta de reposición inmediata.")
                 elif 4 <= bicis_pred <= 7:
-                    st.warning(
-                        "⚠️ **ESTADO MODERADO:** Disponibilidad baja. "
-                        "Programar reposición en la próxima ruta."
-                    )
-
+                    st.warning("⚠️ **ESTADO MODERADO:** Disponibilidad baja. Programar reposición en la próxima ruta.")
                 elif bicis_pred >= (capacidad_total - 3):
-                    st.warning(
-                        "⚠️ **ESTADO DE SATURACIÓN:** Estación casi llena. "
-                        "Plantear retirada de unidades."
-                    )
-
+                    st.warning("⚠️ **ESTADO DE SATURACIÓN:** Estación casi llena. Plantear retirada de unidades.")
                 else:
-                    st.info(
-                        "🟢 **ESTADO ÓPTIMO:** Inventario equilibrado. "
-                        "No requiere acción logística."
-                    )
+                    st.info("🟢 **ESTADO ÓPTIMO:** Inventario equilibrado. No requiere acción logística.")
