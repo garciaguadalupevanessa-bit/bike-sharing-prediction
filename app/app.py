@@ -11,6 +11,7 @@ import hashlib
 import secrets
 import math
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from dotenv import load_dotenv
 import calendar
@@ -939,7 +940,7 @@ def obtener_clima_madrid():
         if not dias:
             return default
 
-        ahora = datetime.now()
+        ahora = datetime.now(ZoneInfo("Europe/Madrid"))
         fecha_hoy = ahora.strftime("%Y-%m-%d")
 
         # Elegimos el bloque del dia actual si existe. Si no, usamos el primero disponible.
@@ -1076,7 +1077,7 @@ with tab_usuario:
 
             if submit_usu:
                 hora_usu = int(hora_usu_str.split(":")[0])
-                ahora = datetime.now()
+                ahora = datetime.now(ZoneInfo("Europe/Madrid"))
                 mapa_dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
                 dia_real = mapa_dias[ahora.weekday()]
                 tipo_real = "Fin de semana" if ahora.weekday() >= 5 else "Laborable"
