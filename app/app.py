@@ -300,6 +300,19 @@ def set_background(ruta_imagen):
             border-radius: 12px !important;
             padding: 1rem !important;
             border: none !important;
+            outline: none !important;
+            box-shadow: none !important;
+        }}
+        div[data-testid="stVerticalBlockBorderWrapper"] > div,
+        div[data-testid="stVerticalBlockBorderWrapper"] > div > div,
+        div[data-testid="stVerticalBlock"],
+        div[data-testid="stHorizontalBlock"],
+        div[data-testid="column"],
+        div[data-testid="stElementContainer"],
+        div[data-testid="stForm"],
+        div[data-testid="stForm"] > div {{
+            border: none !important;
+            outline: none !important;
             box-shadow: none !important;
         }}
 
@@ -439,12 +452,19 @@ def set_background(ruta_imagen):
 
         /* 7. SUBTÍTULO PRINCIPAL Y TÍTULO DEL MAPA: ajustados al texto */
         .subtitulo-app {{
+            color: #000000 !important;
+            -webkit-text-fill-color: #000000 !important;
+            background-color: rgba(255, 255, 255, 0.85) !important;
+            border-radius: 8px !important;
+            padding: 0.25rem 0.6rem !important;
             font-size: 20px !important;
             font-weight: 600 !important;
             display: inline-block;
             width: fit-content;
         }}
         .titulo-mapa {{
+            color: #000000 !important;
+            -webkit-text-fill-color: #000000 !important;
             font-size: 20px !important;
             font-weight: 700 !important;
             display: inline-block;
@@ -1039,14 +1059,14 @@ tab_usuario, tab_gestion = st.tabs(["📱 Vista Usuario (Ciclista)", "⚙️ Vis
 # PESTAÑA 1: VISTA USUARIO
 # ==========================================
 with tab_usuario:
-    with st.container(border=True):
+    with st.container():
         st.markdown("### ¿Habrá bicis cuando llegue?")
         st.info(f"📡 **El tiempo ahora en Madrid:** {clima_actual['temp_mean']}ºC - {clima_actual['estado']}")
 
     col_izq, col_der = st.columns([1, 1.5])
 
     with col_izq:
-        with st.container(border=True):
+        with st.container():
             with st.form("form_usuario"):
                 estacion_usu = st.selectbox("¿A qué estación vas?", list(estaciones_data.keys()), key="est_usu")
                 hora_usu_str = st.selectbox("¿A qué hora vas a ir?", HORAS_DISPONIBLES, index=8, key="hora_usu")
@@ -1078,7 +1098,7 @@ with tab_usuario:
                         st.metric(label="Huecos para aparcar", value=str(max(0, huecos)))
 
     with col_der:
-        with st.container(border=True):
+        with st.container():
             st.markdown('<div class="titulo-mapa">Mapa de estaciones cercanas</div>', unsafe_allow_html=True)
 
             # Centro del mapa según la estación elegida en el desplegable
@@ -1172,7 +1192,7 @@ with tab_gestion:
             cerrar_sesion_gestion()
             st.rerun()
 
-    with st.container(border=True):
+    with st.container():
         st.markdown("### Panel de Control Logístico")
 
         if modelo_rf is None:
@@ -1253,7 +1273,7 @@ with tab_gestion:
         )
 
         if bicis_pred != -1:
-            with st.container(border=True):
+            with st.container():
                 st.success("✅ Simulación completada.")
 
                 col_res1, col_res2 = st.columns(2)
