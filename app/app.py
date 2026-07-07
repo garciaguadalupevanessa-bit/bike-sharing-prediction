@@ -20,10 +20,12 @@ from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatc
 from branca.element import Element
 from streamlit_folium import st_folium
 
-
+# 1. Cargar .env para desarrollo local (tu ordenador)
 load_dotenv()
-API_KEY = os.getenv("AEMET_API_KEY")
 CLAVE_EMPLEADO_GESTION = os.getenv("CLAVE_EMPLEADO_GESTION") or "1234"
+
+# 2. Leer AEMET_API_KEY: primero .env local, luego Streamlit Cloud Secrets
+API_KEY = os.getenv("AEMET_API_KEY")
 
 
 st.set_page_config(page_title="BiciMAD Predictor", page_icon="🚴", layout="wide")
@@ -1052,7 +1054,7 @@ def predecir_bicis(estacion_nombre, hora, mes, dia_semana_str, tipo_dia_str,
         return -1
 
 
-tab_usuario, tab_gestion = st.tabs(["📱 Vista Usuario (Ciclista)", "⚙️ Vista Gestión (BiciMAD)"])
+tab_usuario, tab_gestion, tab_analitica = st.tabs(["📱 Vista Usuario (Ciclista)", "⚙️ Vista Gestión (BiciMAD)", "📊 Analítica de Reservas"])
 
 
 # ==========================================
@@ -1174,8 +1176,23 @@ with tab_usuario:
                 zoom=16,
                 returned_objects=[]
             )
+   
+        # ========================================================
+        # 🚀 TU BOT DE RESERVAS INTEGRADO EN LA VISTA DEL CICLISTA
+        # ========================================================     
+        st.markdown("---")
+        from app_asistente import inyectar_asistente_en_ciclista
+        
+        # Detectamos la hora elegida en la interfaz para pasarla como sugerencia cómoda
+        hora_prediccion = "08:00"
+        for var_name in ['hora_usuario', 'hora_sel', 'hora']:
+            val = locals().get(var_name, None)
+            if val and isinstance(val, str) and ":" in val:
+                hora_prediccion = val
+                break
 
-
+        # Lanzamos el asistente con control de tamaño en columnas
+        inyectar_asistente_en_ciclista(hora_sugerida=str(hora_prediccion))
 # ==========================================
 # PESTAÑA 2: VISTA GESTOR
 # ==========================================
