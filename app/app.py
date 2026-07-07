@@ -5,16 +5,25 @@ import requests
 import os
 import base64
 import joblib
-from datetime import datetime
+import json
+import re
+import hashlib
+import secrets
+import math
+from datetime import datetime, timedelta
+from pathlib import Path
 from dotenv import load_dotenv
 import calendar
 import folium
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from branca.element import Element
 from streamlit_folium import st_folium
 
 
 load_dotenv()
 API_KEY = os.getenv("AEMET_API_KEY")
+CLAVE_EMPLEADO_GESTION = os.getenv("CLAVE_EMPLEADO_GESTION")
 
 
 st.set_page_config(page_title="BiciMAD Predictor", page_icon="🚴", layout="wide")
@@ -22,11 +31,248 @@ st.set_page_config(page_title="BiciMAD Predictor", page_icon="🚴", layout="wid
 
 # --- FONDO Y ESTILOS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+USUARIOS_GESTION_PATH = Path(BASE_DIR) / "data" / "usuarios_gestion.json"
+EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+PASSWORD_HELP = "Mínimo 6 caracteres, al menos una letra, una mayúscula y un número."
+PASSWORD_HASHER = PasswordHasher()
+
+
+def normalizar_email(email):
+    return email.strip().lower()
+
+
+def cargar_usuarios_gestion():
+    if not USUARIOS_GESTION_PATH.exists():
+        return {"usuarios": {}}
+
+    try:
+        with open(USUARIOS_GESTION_PATH, "r", encoding="utf-8") as f:
+            datos = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {"usuarios": {}}
+
+    if not isinstance(datos, dict) or not isinstance(datos.get("usuarios"), dict):
+        return {"usuarios": {}}
+
+    return datos
+
+
+def guardar_usuarios_gestion(datos):
+    USUARIOS_GESTION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(USUARIOS_GESTION_PATH, "w", encoding="utf-8") as f:
+        json.dump(datos, f, indent=2, ensure_ascii=False)
+
+
+def validar_email(email):
+    return bool(EMAIL_REGEX.match(normalizar_email(email)))
+
+
+def validar_password(password):
+    errores = []
+
+    if len(password) < 6:
+        errores.append("La contraseña debe tener al menos 6 caracteres.")
+    if not any(c.isalpha() for c in password):
+        errores.append("La contraseña debe incluir al menos una letra.")
+    if not any(c.isupper() for c in password):
+        errores.append("La contraseña debe incluir al menos una mayúscula.")
+    if not any(c.isdigit() for c in password):
+        errores.append("La contraseña debe incluir al menos un número.")
+
+    return errores
+
+
+def hash_codigo_recuperacion(codigo):
+    return hashlib.sha256(codigo.encode("utf-8")).hexdigest()
+
+
+def registrar_usuario_gestion(email, password, password_repetida, clave_empleado):
+    email = normalizar_email(email)
+    errores_password = validar_password(password)
+
+    if not CLAVE_EMPLEADO_GESTION:
+        return False, "Falta configurar CLAVE_EMPLEADO_GESTION en el archivo .env."
+    if not validar_email(email):
+        return False, "Introduce un correo válido con @ y punto."
+    if password != password_repetida:
+        return False, "Las contraseñas no coinciden."
+    if errores_password:
+        return False, " ".join(errores_password)
+    if not secrets.compare_digest(clave_empleado, CLAVE_EMPLEADO_GESTION):
+        return False, "La clave empleado no es correcta."
+
+    datos = cargar_usuarios_gestion()
+    if email in datos["usuarios"]:
+        return False, "Ya existe una cuenta de gestión con ese correo."
+
+    datos["usuarios"][email] = {
+        "password_hash": PASSWORD_HASHER.hash(password),
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "reset_token_hash": None,
+        "reset_expires_at": None,
+    }
+    guardar_usuarios_gestion(datos)
+    return True, "Cuenta de gestión creada correctamente."
+
+
+def verificar_usuario_gestion(email, password):
+    email = normalizar_email(email)
+
+    if not validar_email(email):
+        return False, "Introduce un correo válido con @ y punto."
+
+    datos = cargar_usuarios_gestion()
+    usuario = datos["usuarios"].get(email)
+    if not usuario:
+        return False, "Correo o contraseña incorrectos."
+
+    try:
+        PASSWORD_HASHER.verify(usuario["password_hash"], password)
+    except (InvalidHashError, VerificationError, VerifyMismatchError, KeyError):
+        return False, "Correo o contraseña incorrectos."
+
+    return True, "Sesión iniciada correctamente."
+
+
+def generar_codigo_recuperacion(email):
+    email = normalizar_email(email)
+
+    if not validar_email(email):
+        return False, "Introduce un correo válido con @ y punto.", None
+
+    datos = cargar_usuarios_gestion()
+    usuario = datos["usuarios"].get(email)
+    if not usuario:
+        return False, "No existe una cuenta de gestión con ese correo.", None
+
+    codigo = str(secrets.randbelow(900000) + 100000)
+    usuario["reset_token_hash"] = hash_codigo_recuperacion(codigo)
+    usuario["reset_expires_at"] = (datetime.now() + timedelta(minutes=15)).isoformat(timespec="seconds")
+    guardar_usuarios_gestion(datos)
+
+    return True, "Código temporal generado. En la demo se muestra en pantalla.", codigo
+
+
+def cambiar_password_con_codigo(email, codigo, password, password_repetida):
+    email = normalizar_email(email)
+    errores_password = validar_password(password)
+
+    if not validar_email(email):
+        return False, "Introduce un correo válido con @ y punto."
+    if password != password_repetida:
+        return False, "Las contraseñas no coinciden."
+    if errores_password:
+        return False, " ".join(errores_password)
+
+    datos = cargar_usuarios_gestion()
+    usuario = datos["usuarios"].get(email)
+    if not usuario or not usuario.get("reset_token_hash") or not usuario.get("reset_expires_at"):
+        return False, "Solicita primero un código de recuperación."
+
+    try:
+        expira = datetime.fromisoformat(usuario["reset_expires_at"])
+    except ValueError:
+        return False, "El código de recuperación no es válido."
+
+    if datetime.now() > expira:
+        usuario["reset_token_hash"] = None
+        usuario["reset_expires_at"] = None
+        guardar_usuarios_gestion(datos)
+        return False, "El código ha caducado. Solicita uno nuevo."
+
+    if not secrets.compare_digest(hash_codigo_recuperacion(codigo.strip()), usuario["reset_token_hash"]):
+        return False, "El código de recuperación no es correcto."
+
+    usuario["password_hash"] = PASSWORD_HASHER.hash(password)
+    usuario["reset_token_hash"] = None
+    usuario["reset_expires_at"] = None
+    guardar_usuarios_gestion(datos)
+
+    return True, "Contraseña actualizada correctamente."
+
+
+def cerrar_sesion_gestion():
+    st.session_state["gestion_autenticada"] = False
+    st.session_state["gestion_email"] = None
+
+
+def mostrar_acceso_gestion():
+    st.markdown("### Acceso a Gestión BiciMAD")
+    st.caption("La zona de gestión requiere cuenta de empleado.")
+
+    tab_login, tab_registro, tab_recuperar = st.tabs(["Iniciar sesión", "Crear cuenta", "Recuperar contraseña"])
+
+    with tab_login:
+        with st.form("form_login_gestion"):
+            email = st.text_input("Correo empleado")
+            password = st.text_input("Contraseña", type="password")
+            st.caption(PASSWORD_HELP)
+            submit_login = st.form_submit_button("Entrar")
+
+        if submit_login:
+            ok, mensaje = verificar_usuario_gestion(email, password)
+            if ok:
+                st.session_state["gestion_autenticada"] = True
+                st.session_state["gestion_email"] = normalizar_email(email)
+                st.success(mensaje)
+                st.rerun()
+            else:
+                st.error(mensaje)
+
+    with tab_registro:
+        with st.form("form_registro_gestion"):
+            email = st.text_input("Correo empleado", key="registro_email")
+            password = st.text_input("Crear contraseña", type="password", key="registro_password")
+            st.caption(PASSWORD_HELP)
+            password_repetida = st.text_input("Repetir contraseña", type="password", key="registro_password_repetida")
+            clave_empleado = st.text_input("Clave empleado", type="password")
+            submit_registro = st.form_submit_button("Crear cuenta")
+
+        if submit_registro:
+            ok, mensaje = registrar_usuario_gestion(email, password, password_repetida, clave_empleado)
+            if ok:
+                st.success(mensaje)
+            else:
+                st.error(mensaje)
+
+    with tab_recuperar:
+        with st.form("form_generar_codigo"):
+            email_recuperacion = st.text_input("Correo empleado", key="recuperar_email")
+            submit_codigo = st.form_submit_button("Generar código demo")
+
+        if submit_codigo:
+            ok, mensaje, codigo = generar_codigo_recuperacion(email_recuperacion)
+            if ok:
+                st.success(mensaje)
+                st.code(codigo)
+            else:
+                st.error(mensaje)
+
+        with st.form("form_cambiar_password"):
+            email_cambio = st.text_input("Correo empleado", key="cambio_email")
+            codigo = st.text_input("Código temporal")
+            nueva_password = st.text_input("Nueva contraseña", type="password")
+            st.caption(PASSWORD_HELP)
+            nueva_password_repetida = st.text_input("Repetir nueva contraseña", type="password")
+            submit_cambio = st.form_submit_button("Actualizar contraseña")
+
+        if submit_cambio:
+            ok, mensaje = cambiar_password_con_codigo(email_cambio, codigo, nueva_password, nueva_password_repetida)
+            if ok:
+                st.success(mensaje)
+            else:
+                st.error(mensaje)
+
+
+@st.cache_data(show_spinner=False)
+def cargar_imagen_base64(ruta_imagen, fecha_modificacion):
+    with open(ruta_imagen, "rb") as f:
+        return base64.b64encode(f.read()).decode()
 
 
 def set_background(ruta_imagen):
-    with open(ruta_imagen, "rb") as f:
-        img_base64 = base64.b64encode(f.read()).decode()
+    fecha_modificacion = os.path.getmtime(ruta_imagen)
+    img_base64 = cargar_imagen_base64(ruta_imagen, fecha_modificacion)
 
 
     st.markdown(
@@ -465,6 +711,45 @@ MESES_ES = {
 }
 HORAS_DISPONIBLES = [f"{h:02d}:00" for h in range(24)]
 DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+NUM_ESTACIONES_CERCANAS_MAPA = 8
+
+
+def calcular_distancia_metros(lat1, lon1, lat2, lon2):
+    radio_tierra_metros = 6371000
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return radio_tierra_metros * c
+
+
+@st.cache_data(show_spinner=False)
+def obtener_estaciones_cercanas_mapa(estacion_nombre, cantidad=NUM_ESTACIONES_CERCANAS_MAPA):
+    estacion_origen = estaciones_data.get(estacion_nombre)
+    if not estacion_origen:
+        return []
+
+    distancias = []
+    for nombre, coord in estaciones_data.items():
+        if nombre == estacion_nombre:
+            continue
+
+        distancia = calcular_distancia_metros(
+            estacion_origen["lat"],
+            estacion_origen["lon"],
+            coord["lat"],
+            coord["lon"],
+        )
+        distancias.append((nombre, round(distancia)))
+
+    distancias.sort(key=lambda item: item[1])
+    return distancias[:cantidad]
 
 
 @st.cache_data(ttl=1800)
@@ -716,11 +1001,12 @@ with tab_usuario:
 
     with col_der:
         with st.container(border=True):
-            st.markdown('<div class="titulo-mapa">Mapa de Estaciones</div>', unsafe_allow_html=True)
+            st.markdown('<div class="titulo-mapa">Mapa de estaciones cercanas</div>', unsafe_allow_html=True)
 
             # Centro del mapa según la estación elegida en el desplegable
             coord_estacion = estaciones_data[estacion_usu]
             centro_mapa = [coord_estacion["lat"], coord_estacion["lon"]]
+            estaciones_cercanas = obtener_estaciones_cercanas_mapa(estacion_usu)
 
             m = folium.Map(
                 location=centro_mapa,
@@ -756,15 +1042,29 @@ with tab_usuario:
                 </style>
             """))
 
-            for nombre, coord in estaciones_data.items():
-                color_marcador = "red" if nombre == estacion_usu else "blue"
+            folium.Marker(
+                [coord_estacion["lat"], coord_estacion["lon"]],
+                tooltip=f"{estacion_usu} · estación seleccionada",
+                popup=f"<b>{estacion_usu}</b><br>Estación seleccionada",
+                icon=folium.Icon(color="red", icon="star")
+            ).add_to(m)
+
+            puntos_mapa = [[coord_estacion["lat"], coord_estacion["lon"]]]
+            for nombre, distancia_metros in estaciones_cercanas:
+                coord = estaciones_data[nombre]
+                puntos_mapa.append([coord["lat"], coord["lon"]])
 
                 folium.Marker(
                     [coord["lat"], coord["lon"]],
-                    tooltip=nombre,
-                    popup=nombre,
-                    icon=folium.Icon(color=color_marcador, icon="info-sign")
+                    tooltip=f"{nombre} · {distancia_metros} m",
+                    popup=f"<b>{nombre}</b><br>A {distancia_metros} m de la estación seleccionada",
+                    icon=folium.Icon(color="blue", icon="info-sign")
                 ).add_to(m)
+
+            if len(puntos_mapa) > 1:
+                m.fit_bounds(puntos_mapa, padding=[24, 24])
+
+            st.caption(f"Mostrando la estación seleccionada y las {len(estaciones_cercanas)} estaciones más cercanas.")
 
             st_folium(
                 m,
@@ -773,7 +1073,7 @@ with tab_usuario:
                 height=350,
                 key="mapa_usuario",
                 center=centro_mapa,
-                zoom=17,
+                zoom=16,
                 returned_objects=[]
             )
 
@@ -782,6 +1082,18 @@ with tab_usuario:
 # PESTAÑA 2: VISTA GESTOR
 # ==========================================
 with tab_gestion:
+    if not st.session_state.get("gestion_autenticada", False):
+        mostrar_acceso_gestion()
+        st.stop()
+
+    col_sesion, col_logout = st.columns([3, 1])
+    with col_sesion:
+        st.caption(f"Sesión iniciada: {st.session_state.get('gestion_email')}")
+    with col_logout:
+        if st.button("Cerrar sesión"):
+            cerrar_sesion_gestion()
+            st.rerun()
+
     with st.container(border=True):
         st.markdown("### Panel de Control Logístico")
 
