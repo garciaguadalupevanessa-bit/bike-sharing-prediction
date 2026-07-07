@@ -23,7 +23,7 @@ from streamlit_folium import st_folium
 
 load_dotenv()
 API_KEY = os.getenv("AEMET_API_KEY")
-CLAVE_EMPLEADO_GESTION = os.getenv("CLAVE_EMPLEADO_GESTION")
+CLAVE_EMPLEADO_GESTION = os.getenv("CLAVE_EMPLEADO_GESTION") or "1234"
 
 
 st.set_page_config(page_title="BiciMAD Predictor", page_icon="🚴", layout="wide")
@@ -31,7 +31,7 @@ st.set_page_config(page_title="BiciMAD Predictor", page_icon="🚴", layout="wid
 
 # --- FONDO Y ESTILOS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-USUARIOS_GESTION_PATH = Path(BASE_DIR) / "data" / "usuarios_gestion.json"
+USUARIOS_GESTION_PATH = Path(BASE_DIR).parent / "data" / "usuarios_gestion.json"
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PASSWORD_HELP = "Mínimo 6 caracteres, al menos una letra, una mayúscula y un número."
 PASSWORD_HASHER = PasswordHasher()

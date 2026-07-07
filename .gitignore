@@ -27,7 +27,7 @@ Thumbs.db
 # Streamlit local secrets
 .streamlit/secrets.toml
 
-# Local management users database
+# Legacy local management users database
 app/data/usuarios_gestion.json
 
 # Data files generated locally
