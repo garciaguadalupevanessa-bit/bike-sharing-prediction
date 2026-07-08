@@ -23,10 +23,40 @@ from streamlit_folium import st_folium
 
 # 1. Cargar .env para desarrollo local (tu ordenador)
 load_dotenv()
+
 CLAVE_EMPLEADO_GESTION = os.getenv("CLAVE_EMPLEADO_GESTION") or "1234"
+
+
 
 # 2. Leer AEMET_API_KEY: primero .env local, luego Streamlit Cloud Secrets
 API_KEY = os.getenv("AEMET_API_KEY")
+
+if not API_KEY:
+    try:
+        API_KEY = st.secrets.get("AEMET_API_KEY")
+    except Exception:
+        API_KEY = None
+
+# 3. Leer CLAVE_EMPLEADO_GESTION: misma lógica, con fallback a "1234"
+CLAVE_EMPLEADO_GESTION = os.getenv("CLAVE_EMPLEADO_GESTION") or "1234"
+
+if CLAVE_EMPLEADO_GESTION == "1234":
+    try:
+        clave_secret = st.secrets.get("CLAVE_EMPLEADO_GESTION")
+        if clave_secret:
+            CLAVE_EMPLEADO_GESTION = clave_secret
+    except Exception:
+        pass
+
+# 4. Si no hay API_KEY, avisar claramente y detener la app
+if not API_KEY:
+    st.error(
+        "No se encontró AEMET_API_KEY. "
+        "Si estás en local, crea un archivo .env con AEMET_API_KEY=tu_clave. "
+        "Si estás en Streamlit Cloud, configura el secret en Settings > Secrets."
+    )
+    st.stop()
+
 
 
 st.set_page_config(page_title="BiciMAD Predictor", page_icon="🚴", layout="wide")
@@ -1327,4 +1357,24 @@ with tab_gestion:
                     else:
                         st.info("🟢 **ESTADO ÓPTIMO:** Inventario equilibrado. No requiere acción logística.")
                     
+                st.markdown("---")
+                from app_asistente import renderizar_bot_asistente
+                renderizar_bot_asistente(
+                    estacion_actual=estacion_gest,
+                    bicis_estimadas=int(bicis_pred),
+                    hora_actual_str=hora_gest,
+                    mes_actual_str=mes_gest
+                )
+    # ==========================================
+    #    PESTAÑA 3: ANALÍTICAS RESERVAS
+    # ==========================================
+    with tab_analitica:
+        with st.container(border=True):
+            st.markdown("### 📊 Cuadro de Mando: Analítica de Reservas")
+            st.write("Análisis descriptivo en tiempo real de la demanda futura registrada por los usuarios.")
+    
+    # Llamamos de forma limpia a la función del archivo asistente
+        from app_asistente import mostrar_graficas_analitica
+        mostrar_graficas_analitica()              
+
     
