@@ -1358,8 +1358,6 @@ with tab_gestion:
                 else:
                     st.info("🟢 **ESTADO ÓPTIMO:** Inventario equilibrado. No requiere acción logística.")
                     
-<<<<<<< Updated upstream
-=======
                 st.markdown("---")
                 from app_asistente import renderizar_bot_asistente
                 renderizar_bot_asistente(
@@ -1379,5 +1377,5 @@ with tab_gestion:
     # Llamamos de forma limpia a la función del archivo asistente
         from app_asistente import mostrar_graficas_analitica
         mostrar_graficas_analitica()              
->>>>>>> Stashed changes
+
     
