@@ -1204,7 +1204,7 @@ with tab_analitica:
     from app_asistente import mostrar_graficas_analitica, archivo_csv
     
     # Ejecutamos las gráficas pasándole la variable del archivo histórico
-    mostrar_graficas_analitica("booking_history.csv")        
+    mostrar_graficas_analitica(archivo_csv)        
         
         
         
@@ -1215,117 +1215,116 @@ with tab_analitica:
 with tab_gestion:
     if not st.session_state.get("gestion_autenticada", False):
         mostrar_acceso_gestion()
-        st.stop()
+    else:
+        col_sesion, col_logout = st.columns([3, 1])
+        with col_sesion:
+            st.caption(f"Sesión iniciada: {st.session_state.get('gestion_email')}")
+        with col_logout:
+            if st.button("Cerrar sesión"):
+                cerrar_sesion_gestion()
+                st.rerun()
 
-    col_sesion, col_logout = st.columns([3, 1])
-    with col_sesion:
-        st.caption(f"Sesión iniciada: {st.session_state.get('gestion_email')}")
-    with col_logout:
-        if st.button("Cerrar sesión"):
-            cerrar_sesion_gestion()
-            st.rerun()
+        with st.container():
+            st.markdown("### Panel de Control Logístico")
 
-    with st.container():
-        st.markdown("### Panel de Control Logístico")
+            if modelo_rf is None:
+                st.warning("⚠️ Modelo no cargado.")
 
-        if modelo_rf is None:
-            st.warning("⚠️ Modelo no cargado.")
+            with st.form("form_gestion"):
+                col_est, col_espacio = st.columns([1, 2])
+                with col_est:
+                    estacion_gest = st.selectbox("Selecciona la estación:", list(estaciones_data.keys()), key="est_gest")
 
-        with st.form("form_gestion"):
-            col_est, col_espacio = st.columns([1, 2])
-            with col_est:
-                estacion_gest = st.selectbox("Selecciona la estación:", list(estaciones_data.keys()), key="est_gest")
+                col_g1, col_g2, col_g3 = st.columns([1, 1, 1])
 
-            col_g1, col_g2, col_g3 = st.columns([1, 1, 1])
+                with col_g1:
+                    st.markdown("**Fecha y hora**")
+                    hora_gest_str = st.selectbox("Hora", HORAS_DISPONIBLES, index=8, key="h_g")
 
-            with col_g1:
-                st.markdown("**Fecha y hora**")
-                hora_gest_str = st.selectbox("Hora", HORAS_DISPONIBLES, index=8, key="h_g")
+                    anio_gest = st.number_input(
+                        "Año",
+                        min_value=2020,
+                        max_value=2035,
+                        value=datetime.now().year,
+                        step=1,
+                        key="anio_g"
+                    )
 
-                anio_gest = st.number_input(
-                    "Año",
-                    min_value=2020,
-                    max_value=2035,
-                    value=datetime.now().year,
-                    step=1,
-                    key="anio_g"
-                )
+                    mes_gest_str = st.selectbox(
+                        "Mes",
+                        list(MESES_ES.keys()),
+                        index=datetime.now().month - 1,
+                        key="m_g"
+                    )
 
-                mes_gest_str = st.selectbox(
-                    "Mes",
-                    list(MESES_ES.keys()),
-                    index=datetime.now().month - 1,
-                    key="m_g"
-                )
+                    mes_gest = MESES_ES[mes_gest_str]
+                    dias_del_mes = calendar.monthrange(int(anio_gest), mes_gest)[1]
 
-                mes_gest = MESES_ES[mes_gest_str]
-                dias_del_mes = calendar.monthrange(int(anio_gest), mes_gest)[1]
+                    dia_mes_gest = st.selectbox(
+                        "Día",
+                        list(range(1, dias_del_mes + 1)),
+                        index=min(datetime.now().day, dias_del_mes) - 1,
+                        key="dia_mes_g"
+                    )
 
-                dia_mes_gest = st.selectbox(
-                    "Día",
-                    list(range(1, dias_del_mes + 1)),
-                    index=min(datetime.now().day, dias_del_mes) - 1,
-                    key="dia_mes_g"
-                )
+                    fecha_gest = datetime(int(anio_gest), mes_gest, int(dia_mes_gest))
+                    dia_gest_str = DIAS_SEMANA[fecha_gest.weekday()]
 
-                fecha_gest = datetime(int(anio_gest), mes_gest, int(dia_mes_gest))
-                dia_gest_str = DIAS_SEMANA[fecha_gest.weekday()]
+                with col_g2:
+                    st.markdown("**Resultado de fecha**")
+                    st.info(f"📅 Ese día cae en: **{dia_gest_str}**")
 
-            with col_g2:
-                st.markdown("**Resultado de fecha**")
-                st.info(f"📅 Ese día cae en: **{dia_gest_str}**")
+                    es_festivo = st.checkbox("¿Es festivo?", value=False, key="festivo_g")
 
-                es_festivo = st.checkbox("¿Es festivo?", value=False, key="festivo_g")
+                    submit_gest = st.form_submit_button("Ejecutar Simulación")
 
-                submit_gest = st.form_submit_button("Ejecutar Simulación")
+                with col_g3:
+                    st.markdown("**Condiciones climáticas**")
+                    t_gest = st.number_input("Temp media", value=clima_actual['temp_mean'])
+                    p_gest = st.number_input("Precipitación", value=0.0)
+                    h_gest = st.number_input("Humedad", value=50.0)
 
-            with col_g3:
-                st.markdown("**Condiciones climáticas**")
-                t_gest = st.number_input("Temp media", value=clima_actual['temp_mean'])
-                p_gest = st.number_input("Precipitación", value=0.0)
-                h_gest = st.number_input("Humedad", value=50.0)
+        if submit_gest and modelo_rf is not None:
+            hora_gest = int(hora_gest_str.split(":")[0])
 
-    if submit_gest and modelo_rf is not None:
-        hora_gest = int(hora_gest_str.split(":")[0])
+            t_max_sim = t_gest + 5.0
+            t_min_sim = t_gest - 5.0
 
-        t_max_sim = t_gest + 5.0
-        t_min_sim = t_gest - 5.0
+            if es_festivo:
+                tipo_gest_calculado = "Festivo"
+            elif dia_gest_str in ["Sábado", "Domingo"]:
+                tipo_gest_calculado = "Fin de semana"
+            else:
+                tipo_gest_calculado = "Laborable"
 
-        if es_festivo:
-            tipo_gest_calculado = "Festivo"
-        elif dia_gest_str in ["Sábado", "Domingo"]:
-            tipo_gest_calculado = "Fin de semana"
-        else:
-            tipo_gest_calculado = "Laborable"
+            bicis_pred = predecir_bicis(
+                estacion_nombre=estacion_gest, hora=hora_gest, mes=mes_gest,
+                dia_semana_str=dia_gest_str, tipo_dia_str=tipo_gest_calculado,
+                temp_mean=t_gest, precip=p_gest, hum=h_gest,
+                temp_max=t_max_sim, temp_min=t_min_sim
+            )
 
-        bicis_pred = predecir_bicis(
-            estacion_nombre=estacion_gest, hora=hora_gest, mes=mes_gest,
-            dia_semana_str=dia_gest_str, tipo_dia_str=tipo_gest_calculado,
-            temp_mean=t_gest, precip=p_gest, hum=h_gest,
-            temp_max=t_max_sim, temp_min=t_min_sim
-        )
+            if bicis_pred != -1:
+                with st.container():
+                    st.success("✅ Simulación completada.")
 
-        if bicis_pred != -1:
-            with st.container():
-                st.success("✅ Simulación completada.")
+                    col_res1, col_res2 = st.columns(2)
+                    capacidad_total = estaciones_data[estacion_gest]["capacity"]
+                    huecos_libres = max(0, capacidad_total - bicis_pred)
 
-                col_res1, col_res2 = st.columns(2)
-                capacidad_total = estaciones_data[estacion_gest]["capacity"]
-                huecos_libres = max(0, capacidad_total - bicis_pred)
+                    with col_res1:
+                        st.metric("Bicicletas Disponibles", f"{bicis_pred} uds.")
+                    with col_res2:
+                        st.metric("Anclajes Libres", f"{huecos_libres} uds.")
 
-                with col_res1:
-                    st.metric("Bicicletas Disponibles", f"{bicis_pred} uds.")
-                with col_res2:
-                    st.metric("Anclajes Libres", f"{huecos_libres} uds.")
-
-                st.markdown("---")
-                if bicis_pred <= 3:
-                    st.error("🚨 **ESTADO CRÍTICO:** Disponibilidad mínima. Se requiere furgoneta de reposición inmediata.")
-                elif 4 <= bicis_pred <= 7:
-                    st.warning("⚠️ **ESTADO MODERADO:** Disponibilidad baja. Programar reposición en la próxima ruta.")
-                elif bicis_pred >= (capacidad_total - 3):
-                    st.warning("⚠️ **ESTADO DE SATURACIÓN:** Estación casi llena. Plantear retirada de unidades.")
-                else:
-                    st.info("🟢 **ESTADO ÓPTIMO:** Inventario equilibrado. No requiere acción logística.")
+                    st.markdown("---")
+                    if bicis_pred <= 3:
+                        st.error("🚨 **ESTADO CRÍTICO:** Disponibilidad mínima. Se requiere furgoneta de reposición inmediata.")
+                    elif 4 <= bicis_pred <= 7:
+                        st.warning("⚠️ **ESTADO MODERADO:** Disponibilidad baja. Programar reposición en la próxima ruta.")
+                    elif bicis_pred >= (capacidad_total - 3):
+                        st.warning("⚠️ **ESTADO DE SATURACIÓN:** Estación casi llena. Plantear retirada de unidades.")
+                    else:
+                        st.info("🟢 **ESTADO ÓPTIMO:** Inventario equilibrado. No requiere acción logística.")
                     
     
