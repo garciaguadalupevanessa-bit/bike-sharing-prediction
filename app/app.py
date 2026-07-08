@@ -1365,16 +1365,3 @@ with tab_gestion:
                     hora_actual_str=hora_gest,
                     mes_actual_str=mes_gest
                 )
-    # ==========================================
-    #    PESTAÑA 3: ANALÍTICAS RESERVAS
-    # ==========================================
-    with tab_analitica:
-        with st.container(border=True):
-            st.markdown("### 📊 Cuadro de Mando: Analítica de Reservas")
-            st.write("Análisis descriptivo en tiempo real de la demanda futura registrada por los usuarios.")
-    
-    # Llamamos de forma limpia a la función del archivo asistente
-        from app_asistente import mostrar_graficas_analitica
-        mostrar_graficas_analitica()              
-
-    
