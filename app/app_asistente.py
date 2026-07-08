@@ -299,7 +299,7 @@ def inyectar_asistente_en_ciclista(hora_sugerida="08:00"):
 
 # --- PANTALLA PRINCIPAL: CUADRO DE MANDO ESTADÍSTICO ---
 
-def mostrar_graficas_analitica(archivo_csv):
+def mostrar_graficas_analitica():
     """Renderiza gráficos descriptivos leyendo de forma sincronizada desde booking_history.csv."""
     st.write("🔍 ¡La función de las gráficas se está ejecutando!")
     
