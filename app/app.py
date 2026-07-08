@@ -23,10 +23,10 @@ from streamlit_folium import st_folium
 
 # 1. Cargar .env para desarrollo local (tu ordenador)
 load_dotenv()
-<<<<<<< Updated upstream
+
 CLAVE_EMPLEADO_GESTION = os.getenv("CLAVE_EMPLEADO_GESTION") or "1234"
-=======
->>>>>>> Stashed changes
+
+
 
 # 2. Leer AEMET_API_KEY: primero .env local, luego Streamlit Cloud Secrets
 API_KEY = os.getenv("AEMET_API_KEY")
