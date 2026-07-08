@@ -12,7 +12,7 @@ DIRECTORIO_APP = "app"
 if os.path.exists(DIRECTORIO_APP) and os.path.isdir(DIRECTORIO_APP):
     archivo_csv = os.path.join(DIRECTORIO_APP, "booking_history.csv")
 else:
-    archivo_csv = "booking_history.csv"
+    archivo_csv = "app/booking_history.csv"
 
 # --- FUNCION AUXILIAR DE LOCALIZADORES ---
 def generar_localizador():

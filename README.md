@@ -15,6 +15,10 @@ A regression model and interactive application that forecasts urban bicycle dema
 Plataforma predictiva e interactiva diseñada para la optimización y gestión del sistema de bicicletas compartidas **BiciMAD** en Madrid...
 🔗 **Documentación Interactiva de la Web:** [Visita nuestra web en Mintify / Documentation Link](https://vgg-14b474a8.mintlify.site)
 
+Puedes acceder a la aplicación desplegada a través del siguiente enlace:
+[🚀 Ir a BiciMAD Predictor](https://bicimad-bike-sharing-prediction.streamlit.app/)
+
+
 ### 🚀 Características Principales
 * **Predicción de Disponibilidad (ML):** Simulación del estado de inventario de las estaciones basándose en variables climáticas reales (temperatura, humedad, precipitación), tipo de día (laborable/festivo) y franjas horarias.
 * **Asistente de Reservas Integrado:** Sistema interactivo mediante ventanas emergentes (*pop-ups* de Streamlit) que valida la regla de antelación de 24 horas y genera localizadores únicos (`BM-XXXX`).
@@ -34,6 +38,9 @@ Plataforma predictiva e interactiva diseñada para la optimización y gestión d
 An interactive, predictive platform engineered to optimize and manage Madrid's **BiciMAD** bike-sharing network. This project merges **Machine Learning** (powered by a Random Forest algorithm) to anticipate bike availability, with an **Intelligent Booking Assistant** that allows users to secure future trips while enabling administrators to monitor real-time business analytics.
 
 🔗 **Live Web Documentation:** [Visit our Mintify Web / Documentation Link](https://vgg-14b474a8.mintlify.site)
+
+You can access the deployed application at the following link:
+[🚀 Go to BiciMAD Predictor](https://bicimad-bike-sharing-prediction.streamlit.app/)
 
 ### 🚀 Key Features
 * **Availability Prediction (ML):** Station inventory simulations based on real-time weather parameters (temperature, humidity, precipitation), day status (weekday/holiday), and specific time slots.
