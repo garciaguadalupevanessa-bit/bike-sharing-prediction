@@ -1204,7 +1204,7 @@ with tab_analitica:
     from app_asistente import mostrar_graficas_analitica, archivo_csv
     
     # Ejecutamos las gráficas pasándole la variable del archivo histórico
-    mostrar_graficas_analitica(archivo_csv)        
+    mostrar_graficas_analitica()        
         
         
         
